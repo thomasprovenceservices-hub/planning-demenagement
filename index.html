@@ -571,7 +571,7 @@ function renderTV(){
       const dems=getDems(m),typ=mType(m),border=TYPE_BORDER[typ];
       const demsH=dems.map(n=>`<span style="color:${demColor(n)};font-weight:700">${n}</span>`).join(' · ');
       const ville=m.ville||'';
-      html+=`<div class="tv-m" style="border-left-color:${border}">
+      html+=`<div class="tv-m" style="border-left-color:${border}${token?';cursor:pointer':''}" data-id="${m.id}" onclick="openById(this)">
         <div class="tv-desc">${m.description||''}</div>
         ${ville?`<div class="tv-ville">📍 ${ville}</div>`:''}
         <div class="tv-meta">${m.dossier||''} ${getCams(m).length?`<span style="background:#FFF3E0;color:#92400e;padding:1px 4px;border-radius:3px;font-size:10px;font-weight:600">${getCams(m).join(' + ')}</span>`:``}</div>
