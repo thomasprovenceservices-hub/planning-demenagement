@@ -347,6 +347,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
     <div id="conflict-bn" class="conflict-bn"></div>
     <div class="mgrid">
       <div class="mf"><label>Date</label><input type="date" id="m-date" onchange="onDateChange()"></div>
+      <div class="mf" id="mf-datefin"><label>Jusqu'au <span style="color:#999;font-weight:400">(optionnel, mission sur plusieurs jours)</span></label><input type="date" id="m-datefin"></div>
       <div class="mf"><label>Horaire <span style="color:#999;font-weight:400">(optionnel)</span></label><input type="time" id="m-heure"></div>
       <div class="mf"><label>Type</label>
         <select id="m-type">
@@ -572,10 +573,11 @@ function renderTV(){
       const dems=getDems(m),typ=mType(m),border=TYPE_BORDER[typ];
       const demsH=dems.map(n=>`<span style="color:${demColor(n)};font-weight:700">${n}</span>`).join(' · ');
       const ville=m.ville||'';
+      const comCls=m.commercial==='ERS'?'pill-ers':'pill-ps';
       html+=`<div class="tv-m" style="border-left-color:${border}${token?';cursor:pointer':''}" data-id="${m.id}" onclick="openById(this)">
-        <div class="tv-desc">${m.heure?`<span style="color:#1a6fc4">${m.heure.substring(0,5)}</span> `:''}${m.description||''}</div>
+        <div class="tv-desc">${m.heure?`<span style="color:#1a6fc4">${m.heure.substring(0,5)}</span> `:''}${m.description||''}${m.commercial?`<span class="pill ${comCls}" style="margin-left:6px;vertical-align:middle">${m.commercial}</span>`:''}</div>
         ${ville?`<div class="tv-ville">📍 ${ville}</div>`:''}
-        <div class="tv-meta">${m.dossier||''} ${getCams(m).length?`<span style="background:#FFF3E0;color:#92400e;padding:1px 4px;border-radius:3px;font-size:10px;font-weight:600">${getCams(m).join(' + ')}</span>`:``}</div>
+        <div class="tv-meta">${m.dossier||''} ${m.groupe_id?'<span title="Mission sur plusieurs jours">🔗</span>':''} ${getCams(m).length?`<span style="background:#FFF3E0;color:#92400e;padding:1px 4px;border-radius:3px;font-size:10px;font-weight:600">${getCams(m).join(' + ')}</span>`:``}</div>
         <div class="tv-gars">${demsH}</div>
       </div>`;
     });
@@ -703,10 +705,11 @@ function renderMobile(filter='tous'){
     if(fer)html+=`<div class="ferie-bn">🎉 ${fer}</div>`;
     ms.forEach(m=>{
       const dems=getDems(m),typ=mType(m),border=TYPE_BORDER[typ];
+      const comCls=m.commercial==='ERS'?'pill-ers':'pill-ps';
       html+=`<div class="mob-m" style="border-left-color:${border}" data-id="${m.id}" onclick="openById(this)">
-        <div class="mob-desc">${m.heure?`<span style="color:#1a6fc4">${m.heure.substring(0,5)}</span> `:''}${m.description||''}</div>
+        <div class="mob-desc">${m.heure?`<span style="color:#1a6fc4">${m.heure.substring(0,5)}</span> `:''}${m.description||''}${m.commercial?`<span class="pill ${comCls}" style="margin-left:6px;vertical-align:middle">${m.commercial}</span>`:''}</div>
         ${m.ville?`<div class="mob-ville">📍 ${m.ville}</div>`:''}
-        <div class="mob-sub"><span>📁 ${m.dossier||'—'}</span><span>🚛 ${getCams(m).join('+')||'—'}</span><span>👷 ${dems.join(' + ')}</span></div>
+        <div class="mob-sub"><span>📁 ${m.dossier||'—'}${m.groupe_id?' 🔗':''}</span><span>🚛 ${getCams(m).join('+')||'—'}</span><span>👷 ${dems.join(' + ')}</span></div>
       </div>`;
     });
     html+='</div>';
@@ -729,7 +732,7 @@ function renderAdmin(){
         ${m.ville?`<div class="m-ville">📍 ${m.ville}</div>`:''}
       </div>
       <div class="m-pills">
-        ${m.dossier?`<span class="pill">${m.dossier}</span>`:''}
+        ${m.dossier?`<span class="pill">${m.dossier}${m.groupe_id?' 🔗':''}</span>`:''}
         ${getCams(m).length?`<span class="pill">${getCams(m).join('+')}</span>`:''}
         <span class="pill">${dems.join(' + ')}</span>
         ${m.commercial?`<span class="pill ${comCls}">${m.commercial}</span>`:''}
@@ -752,6 +755,8 @@ function openAddModal(ds){
   if(!token)return;
   document.getElementById('m-id').value='';
   document.getElementById('m-date').value=ds||today();
+  document.getElementById('m-datefin').value='';
+  document.getElementById('mf-datefin').style.display='';
   document.getElementById('m-heure').value='';
   document.getElementById('m-desc').value='';
   document.getElementById('m-ville').value='';
@@ -771,6 +776,7 @@ function openEditModal(m){
   if(!token){return;}
   document.getElementById('m-id').value=m.id;
   document.getElementById('m-date').value=m.date;
+  document.getElementById('mf-datefin').style.display='none';
   document.getElementById('m-heure').value=m.heure||'';
   document.getElementById('m-desc').value=m.description||'';
   document.getElementById('m-ville').value=m.ville||'';
@@ -867,13 +873,23 @@ function closeModal(e){if(!e||e.target===document.getElementById('mission-modal'
 async function saveMission(){
   const id=document.getElementById('m-id').value;
   const date=document.getElementById('m-date').value,desc=document.getElementById('m-desc').value;
+  const datefin=id?'':document.getElementById('m-datefin').value;
   if(!date||!desc){showMsg('Date et description obligatoires.','err');return;}
-  const data={date,heure:document.getElementById('m-heure').value||null,description:desc.toUpperCase(),ville:document.getElementById('m-ville').value,dossier:document.getElementById('m-dossier').value.toUpperCase(),type:document.getElementById('m-type').value,commercial:document.getElementById('m-com').value,demenageurs:modalDems,camions:modalCams,camion:modalCams.join('+')};
-  const r=await api(id?`/rest/v1/missions?id=eq.${id}`:'/rest/v1/missions',{
-    method:id?'PATCH':'POST',
-    headers:{'Prefer':'return=minimal'},
-    body:JSON.stringify(id?data:{...data,created_by:user?.id})
-  });
+  if(datefin&&datefin<date){showMsg('La date de fin doit être après la date de début.','err');return;}
+  const base={heure:document.getElementById('m-heure').value||null,description:desc.toUpperCase(),ville:document.getElementById('m-ville').value,dossier:document.getElementById('m-dossier').value.toUpperCase(),type:document.getElementById('m-type').value,commercial:document.getElementById('m-com').value,demenageurs:modalDems,camions:modalCams,camion:modalCams.join('+')};
+  let body,method,url;
+  if(id){
+    url=`/rest/v1/missions?id=eq.${id}`;method='PATCH';body=JSON.stringify({date,...base});
+  }else if(datefin&&datefin>date){
+    const groupe_id=(crypto.randomUUID?crypto.randomUUID():(''+Date.now()+Math.random()));
+    const dates=[];let d=new Date(date+'T12:00:00');const end=new Date(datefin+'T12:00:00');
+    while(d<=end){dates.push(ymd(d));d.setDate(d.getDate()+1);}
+    url='/rest/v1/missions';method='POST';
+    body=JSON.stringify(dates.map(ds=>({date:ds,...base,groupe_id,created_by:user?.id})));
+  }else{
+    url='/rest/v1/missions';method='POST';body=JSON.stringify({date,...base,created_by:user?.id});
+  }
+  const r=await api(url,{method,headers:{'Prefer':'return=minimal'},body});
   if(r.ok||r.status===201||r.status===204){
     document.getElementById('mission-modal').classList.remove('open');
     load();if(document.getElementById('view-month').classList.contains('active'))loadMonth();
