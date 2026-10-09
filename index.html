@@ -436,10 +436,13 @@ function goNow(){weekOffset=0;load();}
 function changeMonth(d){monthOffset+=d;loadMonth();}
 function goNowMonth(){monthOffset=0;loadMonth();}
 
-async function api(path,opts={}){
+async function api(path,opts={},retry=true){
+  if(token&&sess&&sess.expires_at-60<Date.now()/1000)await refreshSession();
   const h={'apikey':KEY,'Content-Type':'application/json'};
   if(token)h['Authorization']='Bearer '+token;
-  return fetch(SUPA+path,{...opts,headers:{...h,...(opts.headers||{})}});
+  const r=await fetch(SUPA+path,{...opts,headers:{...h,...(opts.headers||{})}});
+  if(r.status===401&&token&&retry&&await refreshSession())return api(path,opts,false);
+  return r;
 }
 
 async function loadResources(){
@@ -963,25 +966,62 @@ async function deleteRV(id){
 }
 
 // ── AUTH ──
+const SESS_KEY='pd_session';
+let sess=null,refreshing=null;
+function saveSess(d){
+  sess={access_token:d.access_token,refresh_token:d.refresh_token,expires_at:d.expires_at||Math.floor(Date.now()/1000)+(d.expires_in||3600),user:d.user||(sess&&sess.user)||null};
+  try{localStorage.setItem(SESS_KEY,JSON.stringify(sess));}catch(e){}
+  token=sess.access_token;user=sess.user;
+}
+function clearSess(){sess=null;token=null;user=null;try{localStorage.removeItem(SESS_KEY);}catch(e){}}
+async function refreshSession(){
+  if(!sess||!sess.refresh_token)return false;
+  if(refreshing)return refreshing;
+  refreshing=(async()=>{
+    try{
+      const r=await fetch(SUPA+'/auth/v1/token?grant_type=refresh_token',{method:'POST',headers:{'apikey':KEY,'Content-Type':'application/json'},body:JSON.stringify({refresh_token:sess.refresh_token})});
+      const d=await r.json();
+      if(d.access_token){saveSess(d);return true;}
+      if(r.status>=400&&r.status<500){doLogout();}
+      return false;
+    }catch(e){return false;}
+    finally{refreshing=null;}
+  })();
+  return refreshing;
+}
+function showLoggedIn(){
+  document.getElementById('admin-login').style.display='none';
+  document.getElementById('admin-panel').style.display='block';
+  const em=(user&&user.email)||'';
+  document.getElementById('u-badge').textContent=em.split('@')[0];
+  document.getElementById('nav-rv').style.display='';
+}
 async function doLogin(){
   const email=document.getElementById('l-email').value,pwd=document.getElementById('l-pwd').value;
   document.getElementById('l-err').textContent='';
   const r=await fetch(SUPA+'/auth/v1/token?grant_type=password',{method:'POST',headers:{'apikey':KEY,'Content-Type':'application/json'},body:JSON.stringify({email,password:pwd})});
   const data=await r.json();
   if(data.access_token){
-    token=data.access_token;user=data.user;
-    document.getElementById('admin-login').style.display='none';
-    document.getElementById('admin-panel').style.display='block';
-    document.getElementById('u-badge').textContent=email.split('@')[0];
-    document.getElementById('nav-rv').style.display='';
+    saveSess(data);
+    showLoggedIn();
     load();loadRV();
   }else{document.getElementById('l-err').textContent='Email ou mot de passe incorrect.';}
 }
 function doLogout(){
-  token=null;user=null;
+  clearSess();
   document.getElementById('admin-login').style.display='block';
   document.getElementById('admin-panel').style.display='none';
   document.getElementById('nav-rv').style.display='none';
+}
+async function restoreSession(){
+  try{sess=JSON.parse(localStorage.getItem(SESS_KEY)||'null');}catch(e){sess=null;}
+  if(!sess||!sess.access_token)return;
+  token=sess.access_token;user=sess.user;
+  if(sess.expires_at-60<Date.now()/1000){
+    const ok=await refreshSession();
+    if(!ok&&!token)return;
+  }
+  if(token)showLoggedIn();
 }
 
 // ── VUE ──
@@ -1059,7 +1099,8 @@ async function exportMonthPDF(){
 function popPrint(html){const win=window.open('','_blank');win.document.write(html);win.document.close();setTimeout(()=>win.print(),600);}
 
 function tick(){document.getElementById('tv-clock').textContent=new Date().toLocaleTimeString('fr-FR');}
-loadResources().then(()=>load());
+restoreSession().then(()=>loadResources()).then(()=>{load();if(token)loadRV();});
+setInterval(()=>{if(sess)refreshSession();},10*60*1000);
 setInterval(load,60000);setInterval(tick,1000);tick();
 </script>
 </body>
